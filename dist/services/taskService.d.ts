@@ -41,6 +41,7 @@ export declare class TaskService {
         assigneeId?: string;
         isOverdue?: boolean;
     }): Promise<TaskModel[]>;
+    private listTasks;
     /**
      * Managerial: Audit / Accept task completion
      */

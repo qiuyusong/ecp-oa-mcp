@@ -7,39 +7,38 @@ export class ProjectService {
    */
   public async createProject(input: {
     name: string;
-    code?: string;
     planStartDate: string;
     planEndDate: string;
     description?: string;
     budgetHours?: number;
   }): Promise<{ success: boolean; projectId: string; message: string }> {
     const userId = await ecpClient.getUserId();
+    const methodResult = await ecpClient.postAction<any>('Ecp.ProjectMethod.getListData');
+    const methods = methodResult?.data?.records;
+    if (!Array.isArray(methods)) throw new Error('ECP ProjectMethod Action response has no data.records array.');
+    const defaultMethod = methods.find((method: any) =>
+      method.FIsDefault === true || method.FIsDefault === 1 || method.FIsDefault === '1'
+    );
+    if (!defaultMethod?.FId) throw new Error('ECP has no available default project method.');
 
-    try {
-      const res = await ecpClient.post('/openapi/ecp/project/save', {
+    const res = await ecpClient.postAction<any>('Ecp.Project.save', {
+      data: {
         FName: input.name,
-        FProjectCode: input.code || `PRJ-${Date.now().toString().slice(-6)}`,
-        FUserId: userId, // Default PM is current user
+        FUserId: userId,
+        FProjectMethodId: defaultMethod.FId,
         FPlanStartDate: input.planStartDate,
         FPlanEndDate: input.planEndDate,
         FDescription: input.description,
-        FBudgetHours: input.budgetHours || 0,
-      });
-
-      const projectId = res?.id || res?.data?.id || `prj-${Date.now()}`;
-      return {
-        success: true,
-        projectId,
-        message: `专案「${input.name}」创建成功！专案经理已指定为您本人，编号：${input.code || projectId}。`,
-      };
-    } catch (err: any) {
-      const projectId = `prj-${Date.now()}`;
-      return {
-        success: true,
-        projectId,
-        message: `专案「${input.name}」创建成功（离线模拟），编号：${projectId}。`,
-      };
-    }
+        FPlanHours: input.budgetHours ?? 0,
+      },
+    });
+    const projectId = res?.entityId || res?.id || res?.data?.entityId || res?.data?.id;
+    if (!projectId) throw new Error('ECP Project save Action returned no project ID.');
+    return {
+      success: true,
+      projectId,
+      message: `专案「${input.name}」已创建，专案经理为当前用户。`,
+    };
   }
 
   /**
@@ -47,51 +46,40 @@ export class ProjectService {
    */
   public async listMyManagedProjects(status?: 'ACTIVE' | 'DELAYED' | 'ALL'): Promise<ProjectModel[]> {
     const userId = await ecpClient.getUserId();
+    const res = await ecpClient.postAction<any>('Ecp.Project.getListData');
+    const records = res?.data?.records;
+    if (!Array.isArray(records)) throw new Error('ECP Project Action response has no data.records array.');
 
-    try {
-      const res = await ecpClient.post('/openapi/ecp/project/managed', {
-        userId,
-        status: status === 'ALL' ? undefined : status,
-      });
-      return res.data || res;
-    } catch {
-      // Mock data for display & testing
-      const mockProjects: ProjectModel[] = [
-        {
-          id: 'prj-001',
-          name: 'AIPower OA 微应用重构与 BFF 架构升级',
-          code: 'AIP-2026-BFF',
-          managerId: userId,
-          managerName: '我',
-          status: 'ACTIVE',
-          planStartDate: '2026-10-01',
-          planEndDate: '2026-11-30',
-          progressRate: 0.72,
-          budgetHours: 320,
-          consumedHours: 230.5,
-          description: '包含工时微应用现代化、BFF换票与打卡考勤服务集成',
-        },
-        {
-          id: 'prj-002',
-          name: '企业云中台跨租户数据同步系统',
-          code: 'PRJ-DATA-SYNC',
-          managerId: userId,
-          managerName: '我',
-          status: 'DELAYED',
-          planStartDate: '2026-09-01',
-          planEndDate: '2026-10-31',
-          progressRate: 0.85,
-          budgetHours: 180,
-          consumedHours: 175,
-          description: '多租户 Webhook 与增量数据同步中间件',
-        },
-      ];
-
-      if (status && status !== 'ALL') {
-        return mockProjects.filter((p) => p.status === status);
-      }
-      return mockProjects;
-    }
+    return records
+      .filter((record: any) => record.FUserId === userId)
+      .map((record: any): ProjectModel => {
+        const endDate = record.FPlanEndDate?.slice?.(0, 10);
+        const rawStatus = String(record.FStatus || '').toLowerCase();
+        const isComplete = /finish|complete|success/.test(rawStatus);
+        const normalizedStatus: ProjectModel['status'] = isComplete
+          ? 'COMPLETED'
+          : /discard|archive|fail/.test(rawStatus)
+          ? 'ARCHIVED'
+          : /overdue|delay/.test(rawStatus) || (endDate && endDate < new Date().toISOString().slice(0, 10))
+          ? 'DELAYED'
+          : 'ACTIVE';
+        return {
+          id: record.FId,
+          name: record.FName,
+          code: record.FSerialNumber,
+          managerId: record.FUserId,
+          managerName: record['FUserId$'],
+          status: normalizedStatus,
+          planStartDate: record.FPlanStartDate?.slice?.(0, 10),
+          planEndDate: endDate,
+          actualEndDate: record.FCompletedDate?.slice?.(0, 10),
+          progressRate: Number(record.FProgressRate || 0) / 100,
+          budgetHours: Number(record.FPlanHours || 0),
+          consumedHours: Number(record.FHours || 0),
+          description: record.FDescription,
+        };
+      })
+      .filter((project: ProjectModel) => !status || status === 'ALL' || project.status === status);
   }
 
   /**
@@ -105,7 +93,25 @@ export class ProjectService {
     milestones: Array<{ id: string; name: string; endDate: string; isClosed: boolean }>;
   }> {
     const projects = await this.listMyManagedProjects('ALL');
-    const project = projects.find((p) => p.id === projectId) || projects[0];
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) throw new Error(`No accessible project found with ID ${projectId}.`);
+    const [taskResult, milestoneResult] = await Promise.all([
+      ecpClient.postAction<any>('Ecp.Task.getListData', {
+        pageCode: 'Ecp.Project.TaskList',
+        masterEntityId: projectId,
+        relationId: '0e5fd255-91da-48b9-b4d3-7b415e4296fd',
+      }),
+      ecpClient.postAction<any>('Ecp.ProjectMilestone.getListData', {
+        pageCode: 'Ecp.Project.ProjectMilestoneList',
+        masterEntityId: projectId,
+        relationId: '404e7275-bd6b-4ac1-a202-79e3db5e1a32',
+      }),
+    ]);
+    const tasks = taskResult?.data?.records;
+    const milestones = milestoneResult?.data?.records;
+    if (!Array.isArray(tasks) || !Array.isArray(milestones)) {
+      throw new Error('ECP did not return project task and milestone records.');
+    }
 
     const budgetStatus = (project.consumedHours || 0) > (project.budgetHours || 100)
       ? 'OVER_BUDGET'
@@ -117,12 +123,15 @@ export class ProjectService {
       project,
       budgetStatus,
       healthScore: budgetStatus === 'SAFE' ? 95 : budgetStatus === 'WARNING' ? 78 : 55,
-      unresolvedTaskCount: 4,
-      milestones: [
-        { id: 'm-1', name: '需求评审与架构设计', endDate: '2026-10-15', isClosed: true },
-        { id: 'm-2', name: '核心接口开发与联调', endDate: '2026-11-10', isClosed: false },
-        { id: 'm-3', name: '全链路验收与灰度上线', endDate: '2026-11-28', isClosed: false },
-      ],
+      unresolvedTaskCount: tasks.filter((task: any) => task.FProjectId === projectId && !/finish|discard|cancel/i.test(task.FStatus || '')).length,
+      milestones: milestones
+        .filter((milestone: any) => milestone.FProjectId === projectId)
+        .map((milestone: any) => ({
+          id: milestone.FId,
+          name: milestone.FName,
+          endDate: milestone.FFinishDate?.slice?.(0, 10) || milestone.FPlanEndDate?.slice?.(0, 10) || '',
+          isClosed: /finish|closed|complete/i.test(milestone.FStatus || ''),
+        })),
     };
   }
 }

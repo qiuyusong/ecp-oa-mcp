@@ -15,7 +15,8 @@
     "prepare": "tsc",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "test": "tsx --test tests/ecpClient.test.ts tests/services.test.ts"
   },
   "keywords": [
     "mcp",

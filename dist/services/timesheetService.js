@@ -7,104 +7,147 @@ export class TimesheetService {
     async getDashboard(dateStr) {
         const date = dateStr || new Date().toISOString().split('T')[0];
         const userId = await ecpClient.getUserId();
-        try {
-            // 1. Fetch available tasks for timesheet
-            const taskRes = await ecpClient.post('/ecp/timereport/all/relevantobjs', { userId });
-            const rawTasks = taskRes?.taskItems || taskRes?.data || [];
-            const tasks = rawTasks.map((t) => ({
-                id: t.FId || t.id,
-                taskName: t.FName || t.name || t.taskName,
-                projectId: t.FProjectId || t.projectId,
-                projectName: t.FProjectName || t.projectName,
-            }));
-            // 2. Fetch submitted details for that date
-            const detailRes = await ecpClient.post('/ecp/timereport/all/detaildatas', {
-                dateTime: `${date} 00:00:00`,
-                userId,
-            });
-            const rawDetails = detailRes?.datas || detailRes?.data || [];
-            let todayHours = 0;
-            const details = rawDetails.map((d) => {
-                const hours = Number(d.FWorkTime || d.workHours || 0);
-                todayHours += hours;
-                return {
-                    id: d.FId || d.id,
-                    taskId: d.FTaskId || d.taskId,
-                    taskName: d.FTaskName || d.taskName || '未命名任务',
-                    workHours: hours,
-                    description: d.FDescription || d.description,
-                    createTime: d.FCreateTime || d.createTime,
-                };
-            });
-            const targetWorkHours = 8.0;
-            const completionRate = Math.min(1.0, Number((todayHours / targetWorkHours).toFixed(2)));
+        const taskRes = await ecpClient.postAction('Ecp.TimeReport.getAllRelevantObjs', { userId });
+        const rawTasks = taskRes?.taskItems;
+        if (!Array.isArray(rawTasks))
+            throw new Error('ECP TimeReport Action response has no taskItems array.');
+        const tasks = rawTasks.map((task) => ({
+            id: task.value || task.FId || task.id,
+            taskName: task.text || task.FName || task.name || task.taskName,
+            projectId: task.FProjectId || task.projectId,
+            projectName: task.FProjectName || task.projectName,
+        }));
+        const detailRes = await ecpClient.postAction('Ecp.TimeReport.getAllDetailDatas', {
+            dateTime: `${date} 00:00:00`,
+        });
+        const rawDetails = detailRes?.datas;
+        if (!Array.isArray(rawDetails))
+            throw new Error('ECP TimeReport Action response has no datas array.');
+        let todayHours = 0;
+        const details = rawDetails.map((detail) => {
+            const hours = Number(detail.FWorkTime || detail.workHours || 0);
+            todayHours += hours;
             return {
-                date,
-                todayWorkHours: todayHours,
-                targetWorkHours,
-                completionRate,
-                isCompliant: todayHours >= targetWorkHours,
-                tasks,
-                details,
+                id: detail.FId || detail.id,
+                taskId: detail.FTaskId || detail.taskId,
+                taskName: detail.FTaskName || detail.taskName || '未命名任务',
+                workHours: hours,
+                description: detail.FWorkDescription || detail.FDescription || detail.description,
+                createTime: detail.FDateTime || detail.FCreateTime || detail.createTime,
+                activityType: detail.FType || detail.activityType,
             };
-        }
-        catch (err) {
-            console.warn(`[TimesheetService] Fallback to mock dashboard: ${err.message}`);
-            return {
-                date,
-                todayWorkHours: 0,
-                targetWorkHours: 8.0,
-                completionRate: 0,
-                isCompliant: false,
-                tasks: [
-                    { id: 'mock-task-1', taskName: 'AIPower 核心功能研发与优化', projectName: 'AIPower' },
-                    { id: 'mock-task-2', taskName: '架构重构与接口联调', projectName: 'ECP-OA' },
-                ],
-                details: [],
-            };
-        }
+        });
+        const targetWorkHours = 8.0;
+        const completionRate = Math.min(1.0, Number((todayHours / targetWorkHours).toFixed(2)));
+        return {
+            date,
+            todayWorkHours: todayHours,
+            targetWorkHours,
+            completionRate,
+            isCompliant: todayHours >= targetWorkHours,
+            tasks,
+            details,
+        };
     }
     /**
      * Submit timesheet entries
      */
     async submitTimesheet(input) {
+        if (input.entries.length === 0) {
+            throw new Error('At least one time report detail is required.');
+        }
+        for (const entry of input.entries) {
+            if (!entry.activityType?.trim()) {
+                throw new Error('Every time report detail requires an activity type.');
+            }
+            if (!Number.isFinite(entry.hours) || entry.hours <= 0) {
+                throw new Error('Every time report detail requires positive finite work hours.');
+            }
+        }
+        const activityTypeRes = await ecpClient.postAction('Ecp.TimeReport.getActivityTypeItem');
+        if (!Array.isArray(activityTypeRes?.typeItems)) {
+            throw new Error('ECP TimeReport Action response has no typeItems array.');
+        }
+        const activityTypes = new Set(activityTypeRes.typeItems.map((item) => item.text).filter(Boolean));
+        for (const entry of input.entries) {
+            if (!activityTypes.has(entry.activityType.trim())) {
+                throw new Error(`Activity type "${entry.activityType}" is not available in ECP.`);
+            }
+        }
         const userId = await ecpClient.getUserId();
         const totalHours = input.entries.reduce((sum, e) => sum + e.hours, 0);
-        try {
-            // Step 1: Create or update main unit entity
-            const mainRes = await ecpClient.post('/ecp/timereport/add/mainunitentity', {
-                date: `${input.date} 00:00:00`,
-                userId,
-                actualWorktime: totalHours,
-                actualWorkvalue: totalHours,
-                couldSave: 1,
-            });
-            const entityId = mainRes?.entityId || mainRes?.data?.entityId || 'main-entity-id';
-            // Step 2: Add detail rows
-            const jsonData = input.entries.map((entry) => ({
-                FTaskId: entry.taskId,
-                FWorkTime: entry.hours,
-                FDescription: entry.description,
-                FActivityType: entry.activityType || '研发',
-                FActivityDetail: entry.activityDetail || '功能开发',
-            }));
-            await ecpClient.post('/ecp/timereport/add/details', {
-                entityId,
-                userId,
-                jsonData,
-                allDetails: jsonData,
-            });
-            return {
-                success: true,
-                message: `成功提交 ${input.date} 工时共 ${totalHours} 小时，明细 ${input.entries.length} 条。`,
-            };
+        if (totalHours > 24) {
+            throw new Error('Daily time report hours cannot exceed 24.');
         }
-        catch (err) {
-            return {
-                success: false,
-                message: `提交工时失败: ${err.message}`,
-            };
+        const existing = await this.getDashboard(input.date);
+        if (existing.details.length > 0) {
+            throw new Error('This date already has time report details. Editing or appending existing rows is not supported by this MCP operation.');
         }
+        const taskProgress = new Map();
+        for (const entry of input.entries) {
+            if (!entry.taskId || taskProgress.has(entry.taskId.toLowerCase()))
+                continue;
+            const progressRes = await ecpClient.postAction('Ecp.TimeReport.getCurProgress', { taskId: entry.taskId });
+            const progress = Number(progressRes?.progress);
+            if (progressRes?.progress == null || !Number.isFinite(progress)) {
+                throw new Error(`ECP did not return current progress for task ${entry.taskId}.`);
+            }
+            taskProgress.set(entry.taskId.toLowerCase(), progress);
+        }
+        const checkRes = await ecpClient.postAction('Ecp.TimeReport.addMainUnitEntity', {
+            date: `${input.date} 00:00:00`,
+            userId,
+            getLastRecordByuser: 1,
+            couldSave: 0,
+        });
+        if (checkRes?.whatTime === 1) {
+            throw new Error(`ECP rejected the time report date (whatTime=${checkRes.whatTime}).`);
+        }
+        const mainRes = await ecpClient.postAction('Ecp.TimeReport.addMainUnitEntity', {
+            date: `${input.date} 00:00:00`,
+            userId,
+            actualWorktime: totalHours,
+            actualWorkvalue: 0,
+            couldSave: 1,
+        });
+        if (mainRes?.state !== 'ok' || !Array.isArray(mainRes?.entityIds) || !mainRes.entityIds[0]) {
+            throw new Error(`ECP rejected time report main entity (state=${mainRes?.state || 'unknown'}, whatTime=${mainRes?.whatTime ?? 'unknown'}).`);
+        }
+        const entityId = mainRes.entityIds[0];
+        let elapsedHours = 0;
+        const jsonData = input.entries.map((entry) => {
+            const start = new Date(`${input.date}T09:00:00`);
+            start.setTime(start.getTime() + elapsedHours * 60 * 60 * 1000);
+            elapsedHours += entry.hours;
+            const end = new Date(`${input.date}T09:00:00`);
+            end.setTime(end.getTime() + elapsedHours * 60 * 60 * 1000);
+            const type = entry.activityType.trim();
+            const description = entry.description;
+            return {
+                taskId: entry.taskId,
+                type,
+                workTime: entry.hours,
+                progress: entry.taskId ? taskProgress.get(entry.taskId.toLowerCase()) : 0,
+                outputValue: 0,
+                WorkDescription: description,
+                fname: [entry.taskId, type, description].filter(Boolean).join(':'),
+                fdatetime: `${input.date} ${start.toTimeString().slice(0, 8)}`,
+                fenddatetime: `${input.date} ${end.toTimeString().slice(0, 8)}`,
+                userId,
+            };
+        });
+        const detailRes = await ecpClient.postAction('Ecp.TimeReport.addDetails', {
+            entityId,
+            userId,
+            jsonData,
+            allDetails: jsonData,
+        });
+        if (detailRes?.state !== 'ok')
+            throw new Error(`ECP did not confirm time report detail save (state=${detailRes?.state || 'unknown'}).`);
+        return {
+            success: true,
+            message: `已提交 ${input.date} 工时共 ${totalHours} 小时，明细 ${input.entries.length} 条。`,
+        };
     }
     /**
      * Automatically generate and submit timesheet from Git commits
@@ -150,65 +193,16 @@ export class TimesheetService {
      */
     async getTeamTimesheetSummary(dateStr, departmentId) {
         const date = dateStr || new Date().toISOString().split('T')[0];
-        try {
-            const res = await ecpClient.post('/openapi/timereport/team/summary', {
-                date,
-                departmentId,
-            });
-            return res.data || res;
-        }
-        catch {
-            // Mock for demonstration / test
-            const mockMembers = [
-                {
-                    userId: 'user-001',
-                    userName: '张三',
-                    date,
-                    totalHours: 8.5,
-                    isCompliant: true,
-                    details: [{ taskId: 't-1', taskName: 'BFF接口重构', hours: 8.5, description: '完成换票接口' }],
-                },
-                {
-                    userId: 'user-002',
-                    userName: '李四',
-                    date,
-                    totalHours: 4.0,
-                    isCompliant: false,
-                    details: [{ taskId: 't-2', taskName: '前端页面优化', hours: 4.0, description: '上午联调' }],
-                },
-                {
-                    userId: 'user-003',
-                    userName: '王五',
-                    date,
-                    totalHours: 0,
-                    isCompliant: false,
-                    details: [],
-                },
-            ];
-            return {
-                date,
-                totalMembers: mockMembers.length,
-                compliantCount: mockMembers.filter((m) => m.isCompliant).length,
-                missingCount: mockMembers.filter((m) => m.totalHours === 0).length,
-                members: mockMembers,
-            };
-        }
+        void departmentId;
+        throw new Error(`AIPower exposes per-user time report data, but no team member discovery or team summary Action was found for ${date}.`);
     }
     /**
      * Managerial: Remind missing or under-hours members
      */
     async remindMembers(userIds, message) {
         const remindText = message || '请及时在 ECP 中填报今日工时明细，保持出勤合规。';
-        try {
-            await ecpClient.post('/openapi/notice/batchSend', {
-                userIds,
-                content: remindText,
-            });
-            return { success: true, remindedCount: userIds.length };
-        }
-        catch {
-            return { success: true, remindedCount: userIds.length };
-        }
+        void remindText;
+        throw new Error(`No AIPower batch-notice Action was found for ${userIds.length} requested recipients.`);
     }
 }
 export const timesheetService = new TimesheetService();

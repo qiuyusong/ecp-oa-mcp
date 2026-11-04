@@ -5,7 +5,6 @@ export declare class ProjectService {
      */
     createProject(input: {
         name: string;
-        code?: string;
         planStartDate: string;
         planEndDate: string;
         description?: string;

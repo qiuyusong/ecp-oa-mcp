@@ -18,34 +18,24 @@ export class TaskService {
     const assigneeId = input.assigneeId || currentUserId;
     const isSelf = assigneeId === currentUserId;
 
-    try {
-      const res = await ecpClient.post('/ecp/task/save', {
-        id: null,
+    const res = await ecpClient.postAction<any>('Ecp.Task.save', {
+      data: {
         FProjectId: input.projectId,
         FName: input.taskName,
         FUserId: assigneeId,
         FPredictHour: input.predictHours,
-        FTaskStartDate: input.planStartDate || new Date().toISOString().split('T')[0],
-        FTaskEndDate: input.planEndDate,
-        FDescription: input.description,
-        FProgress: 0,
-        FStatus: 'IN_PROGRESS',
-      });
-
-      const taskId = res?.id || res?.data?.id || `task-${Date.now()}`;
-      return {
-        success: true,
-        taskId,
-        message: `任务「${input.taskName}」创建成功！指派对象：${isSelf ? '您本人' : `成员 (${assigneeId})`}，预估工时：${input.predictHours}h。`,
-      };
-    } catch (err: any) {
-      const taskId = `task-${Date.now()}`;
-      return {
-        success: true,
-        taskId,
-        message: `任务「${input.taskName}」创建成功（离线模拟），任务ID：${taskId}。`,
-      };
-    }
+        FPredictStartDate: input.planStartDate,
+        FPredictEndDate: input.planEndDate,
+        FTaskDescription: input.description,
+      },
+    });
+    const taskId = res?.entityId || res?.id || res?.data?.entityId || res?.data?.id;
+    if (!taskId) throw new Error('ECP Task save Action returned no task ID.');
+    return {
+      success: true,
+      taskId,
+      message: `任务「${input.taskName}」已创建并指派给${isSelf ? '当前用户' : `成员 ${assigneeId}`}。`,
+    };
   }
 
   /**
@@ -58,29 +48,23 @@ export class TaskService {
     finishDescription?: string;
     isFinished?: boolean;
   }): Promise<{ success: boolean; message: string }> {
-    try {
-      if (input.isFinished) {
-        await ecpClient.post('/ecp/task/finishcheck', { taskId: input.taskId });
-      }
-
-      await ecpClient.post('/ecp/task/save', {
-        id: input.taskId,
-        FProgress: input.progress,
-        FHours: input.actualHours,
-        FFinishDescription: input.finishDescription,
-        FStatus: input.isFinished ? 'FINISHED' : 'IN_PROGRESS',
-      });
-
-      return {
-        success: true,
-        message: `任务更新成功！当前进度：${input.progress}%${input.isFinished ? '，已申请完结验收' : ''}。`,
-      };
-    } catch (err: any) {
-      return {
-        success: true,
-        message: `任务状态更新成功（模拟通过）: 进度 ${input.progress}%。`,
-      };
+    if (!input.isFinished) {
+      throw new Error('AIPower has no Task Action for directly setting progress or actual hours. Progress and hours are derived from submitted time reports.');
     }
+    const check = await ecpClient.postAction<any>('Ecp.Task.doFinishCheck', { taskId: input.taskId });
+    if (check?.allFinished === false) throw new Error('Task cannot be submitted for completion until all collaborators finish.');
+    const res = await ecpClient.postAction<any>('Ecp.Task.submit', {
+      entityIds: [input.taskId],
+      data: {
+        FFinishDescription: input.finishDescription,
+        FCompletedDate: new Date().toISOString(),
+      },
+      workflowCode: 'Ecp.Task.FinishAudit',
+    });
+    return {
+      success: true,
+      message: `任务已提交完结验收。${res?.entityIds?.[0] ? `任务 ID：${res.entityIds[0]}` : ''}`,
+    };
   }
 
   /**
@@ -88,43 +72,7 @@ export class TaskService {
    */
   public async listMyTasks(status?: 'PENDING' | 'IN_PROGRESS' | 'FINISHED' | 'CLOSED'): Promise<TaskModel[]> {
     const userId = await ecpClient.getUserId();
-
-    try {
-      const res = await ecpClient.post('/ecp/task/itemsbyuser', {
-        userId,
-        status,
-      });
-      return res.data || res;
-    } catch {
-      return [
-        {
-          id: 'task-my-1',
-          projectId: 'prj-001',
-          projectName: 'AIPower OA 微应用重构与 BFF 架构升级',
-          name: 'MCP Server 核心架构设计与接口联调',
-          assigneeId: userId,
-          assigneeName: '我',
-          status: 'IN_PROGRESS',
-          predictHours: 16,
-          actualHours: 8,
-          progress: 60,
-          planEndDate: '2026-11-06',
-        },
-        {
-          id: 'task-my-2',
-          projectId: 'prj-001',
-          projectName: 'AIPower OA 微应用重构与 BFF 架构升级',
-          name: '考勤与工时双模工作流集成',
-          assigneeId: userId,
-          assigneeName: '我',
-          status: 'IN_PROGRESS',
-          predictHours: 12,
-          actualHours: 4,
-          progress: 35,
-          planEndDate: '2026-11-08',
-        },
-      ];
-    }
+    return this.listTasks('Ecp.Task.getListData', userId, status);
   }
 
   /**
@@ -135,42 +83,53 @@ export class TaskService {
     assigneeId?: string;
     isOverdue?: boolean;
   }): Promise<TaskModel[]> {
-    const myTasks = await this.listMyTasks();
-    const mockTeamTasks: TaskModel[] = [
-      ...myTasks,
-      {
-        id: 'task-team-1',
-        projectId: 'prj-001',
-        projectName: 'AIPower OA 微应用重构与 BFF 架构升级',
-        name: 'React AIFF 前端桥接容器兼容改造',
-        assigneeId: 'user-001',
-        assigneeName: '张三',
-        status: 'FINISHED',
-        predictHours: 24,
-        actualHours: 22,
-        progress: 100,
-        planEndDate: '2026-11-02',
-        finishDescription: '完成 AiffBridge 跨端适配，测试通过。申请验收。',
-      },
-      {
-        id: 'task-team-2',
-        projectId: 'prj-001',
-        projectName: 'AIPower OA 微应用重构与 BFF 架构升级',
-        name: 'Quicksilver 历史数据库清理与表结构对齐',
-        assigneeId: 'user-002',
-        assigneeName: '李四',
-        status: 'IN_PROGRESS',
-        predictHours: 16,
-        actualHours: 12,
-        progress: 75,
-        planEndDate: '2026-11-07',
-      },
-    ];
-
-    let result = mockTeamTasks;
+    let result = await this.listTasks('Ecp.Task.getListData');
     if (filter?.projectId) result = result.filter((t) => t.projectId === filter.projectId);
     if (filter?.assigneeId) result = result.filter((t) => t.assigneeId === filter.assigneeId);
+    if (filter?.isOverdue) {
+      const today = new Date().toISOString().slice(0, 10);
+      result = result.filter((task) => Boolean(task.planEndDate && task.planEndDate < today));
+    }
     return result;
+  }
+
+  private async listTasks(
+    action: string,
+    userId?: string,
+    requestedStatus?: 'PENDING' | 'IN_PROGRESS' | 'FINISHED' | 'CLOSED'
+  ): Promise<TaskModel[]> {
+    const res = await ecpClient.postAction<any>(action);
+    const records = res?.data?.records;
+    if (!Array.isArray(records)) throw new Error('ECP Task Action response has no data.records array.');
+    return records
+      .filter((record: any) => !userId || record.FUserId === userId)
+      .map((record: any): TaskModel => {
+        const rawStatus = String(record.FStatus || '').toLowerCase();
+        const normalizedStatus: TaskModel['status'] = /finish|audit/.test(rawStatus)
+          ? 'FINISHED'
+          : /discard|cancel/.test(rawStatus)
+          ? 'CLOSED'
+          : /new|assign|unassigned/.test(rawStatus)
+          ? 'PENDING'
+          : 'IN_PROGRESS';
+        return {
+          id: record.FId,
+          projectId: record.FProjectId,
+          projectName: record['FProjectId$'],
+          name: record.FName,
+          assigneeId: record.FUserId,
+          assigneeName: record['FUserId$'],
+          status: normalizedStatus,
+          predictHours: Number(record.FPredictHour || 0),
+          actualHours: Number(record.FHours || 0),
+          progress: Number(record.FProgress || 0),
+          planStartDate: record.FPredictStartDate?.slice?.(0, 10) || record.FTaskStartDate?.slice?.(0, 10),
+          planEndDate: record.FPredictEndDate?.slice?.(0, 10) || record.FTaskEndDate?.slice?.(0, 10),
+          finishDescription: record.FFinishDescription,
+          completedDate: record.FCompletedDate?.slice?.(0, 10),
+        };
+      })
+      .filter((task: TaskModel) => !requestedStatus || task.status === requestedStatus);
   }
 
   /**
@@ -181,28 +140,9 @@ export class TaskService {
     approve: boolean,
     comment?: string
   ): Promise<{ success: boolean; message: string }> {
-    try {
-      if (approve) {
-        await ecpClient.post('/ecp/task/save', {
-          id: taskId,
-          FStatus: 'CLOSED',
-          FCompletedDate: new Date().toISOString(),
-          FFinishAuditComment: comment || '审核通过，准予结项。',
-        });
-        return { success: true, message: `任务 [${taskId}] 验收通过，已正式归档结项。` };
-      } else {
-        await ecpClient.post('/ecp/task/unclose', {
-          taskId,
-          comment: comment || '验收不通过，请补充交付物。',
-        });
-        return { success: true, message: `任务 [${taskId}] 已驳回，状态已打回重新修改。` };
-      }
-    } catch {
-      return {
-        success: true,
-        message: `任务 [${taskId}] 验收操作完成（结果: ${approve ? '通过' : '驳回'}）。`,
-      };
-    }
+    void approve;
+    void comment;
+    throw new Error(`AIPower exposes task submission through Ecp.Task.submit, but this source does not provide a manager task-audit Action for task ${taskId}.`);
   }
 }
 

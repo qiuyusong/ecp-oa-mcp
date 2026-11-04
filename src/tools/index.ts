@@ -67,7 +67,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'ecp_get_team_timesheet_summary',
-    '【主管管理】获取下属团队成员在指定日期的工时合规概况（未填/漏填/不足8h人员）',
+    '【接口待配置】查询团队工时合规概况；当前 AIPower 源码未发现成员枚举及团队汇总 Action。',
     {
       date: z.string().optional().describe('查询日期，格式 YYYY-MM-DD，默认今天'),
       departmentId: z.string().optional().describe('指定部门 ID'),
@@ -82,7 +82,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'ecp_remind_missing_timesheet',
-    '【主管管理】对未填或少填工时的团队成员发送一键催报提醒',
+    '【接口待配置】催报团队工时；当前 AIPower 源码未发现批量通知 Action。',
     {
       userIds: z.array(z.string()).describe('被提醒的成员用户 ID 列表'),
       message: z.string().optional().describe('催填提醒文字内容'),
@@ -101,7 +101,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_get_clock_status',
-    '查询个人今日排班与考勤打卡状态（上班卡/下班卡是否已打、时间点）',
+    '【接口待配置】查询个人打卡状态；当前 AIPower 源码未发现考勤 Action。',
     {},
     async () => {
       const res = await clockService.getMyStatus();
@@ -113,7 +113,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_punch_clock',
-    '执行上班打卡或下班打卡',
+    '【接口待配置】执行打卡；当前 AIPower 源码未发现考勤 Action。',
     {
       action: z.enum(['CHECK_IN', 'CHECK_OUT']).describe('打卡动作：CHECK_IN=上班打卡, CHECK_OUT=下班打卡'),
       locationName: z.string().optional().default('办公室 WiFi / 正常').describe('打卡地点备注'),
@@ -128,7 +128,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_apply_clock_repair',
-    '【个人申请】因漏打卡等原因发起补卡申请',
+    '【接口待配置】发起补卡申请；当前 AIPower 源码未发现考勤申请 Action。',
     {
       date: z.string().describe('补卡日期，格式 YYYY-MM-DD'),
       punchTime: z.string().describe('补卡具体时间，如 18:30:00'),
@@ -145,7 +145,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_apply_overtime',
-    '【个人申请】因工作需要发起加班申请',
+    '【接口待配置】发起加班申请；当前 AIPower 源码未发现考勤申请 Action。',
     {
       date: z.string().describe('加班日期，格式 YYYY-MM-DD'),
       startTime: z.string().describe('开始时间，如 18:00:00'),
@@ -164,7 +164,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_list_my_applications',
-    '查询个人提交的审批单流转状态（补卡、加班、请假）',
+    '【接口待配置】查询个人审批单；当前 AIPower 源码未发现对应 Action。',
     {},
     async () => {
       const res = await clockService.listMyApplications();
@@ -176,7 +176,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_get_team_attendance_dashboard',
-    '【主管管理】查看管辖团队今日考勤出勤看板（正常出勤、迟到、缺卡、请假名单）',
+    '【接口待配置】查询团队考勤；当前 AIPower 源码未发现考勤 Action。',
     {
       date: z.string().optional().describe('查询日期，格式 YYYY-MM-DD，默认今天'),
     },
@@ -197,7 +197,6 @@ export function registerTools(server: McpServer) {
     '创建新专案，默认将专案经理（PM）指定为您本人',
     {
       name: z.string().describe('专案名称'),
-      code: z.string().optional().describe('专案编号，如 AIP-2026-X'),
       planStartDate: z.string().describe('计划开始日期，YYYY-MM-DD'),
       planEndDate: z.string().describe('计划结束日期，YYYY-MM-DD'),
       description: z.string().optional().describe('专案背景与目标描述'),
@@ -332,7 +331,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_list_pending_approvals',
-    '【主管管理】获取待我审批的流程单据池（补卡、加班、请假、任务验收、专案延期），内含 AI 辅助比对建议',
+    '【接口待配置】查询待审批列表；当前 AIPower 源码未发现通用审批队列 Action。',
     {
       category: z
         .enum(['CLOCK_REPAIR', 'OVERTIME', 'LEAVE', 'TASK_FINISH', 'PROJECT_DELAY'])
@@ -349,7 +348,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_audit_action',
-    '【主管管理】执行单笔审批操作（通过或驳回）并写入审批批语',
+    '【接口待配置】执行审批；当前 AIPower 源码未发现通用审批 Action。',
     {
       approvalId: z.string().describe('审批单据 ID'),
       action: z.enum(['APPROVE', 'REJECT']).describe('审批结果：APPROVE=通过, REJECT=驳回'),
@@ -365,7 +364,7 @@ export function registerTools(server: McpServer) {
 
   server.tool(
     'oa_batch_audit',
-    '【主管管理】对多笔经 AI 预检无异常的合规单据执行一键批量通过',
+    '【接口待配置】批量审批；当前 AIPower 源码未发现通用审批 Action。',
     {
       approvalIds: z.array(z.string()).describe('待审批单据 ID 列表'),
       defaultComment: z.string().optional().default('经核实无误，批量审批通过。').describe('统一批语'),

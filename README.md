@@ -13,7 +13,7 @@
 ```mermaid
 flowchart TD
     subgraph Identity ["主管 / 骨干账号 (单一身份)"]
-        Token["统一认证凭证 (Bearer Token / Cookie)"]
+        Token["ECP Action tokenId"]
     end
 
     subgraph MCPServer ["ECP-OA MCP Server"]
@@ -35,7 +35,7 @@ flowchart TD
     end
 
     Identity --> MCPServer
-    MCPServer -->|REST / OpenAPI| ECP["ECP 底座 (工时/任务/专案)"]
+    MCPServer -->|/openapi/aile/token/apply 换票；/qsvd-list Action| ECP["ECP 底座 (工时/任务/专案)"]
     MCPServer -->|HTTP / REST| OA["OA 考勤与审批系统"]
 ```
 
@@ -110,6 +110,11 @@ flowchart TD
 
 > 💡 **提示**：
 > * 只需配置 **`ECP_BASE_URL`**、**`ECP_USERNAME`** 和 **`ECP_PASSWORD`** 即可。
+> * 账号认证请求为 `POST /openapi/aile/token/apply`（`loginType: account`）；列表 Action 的源码请求格式为 `POST /qsvd-list/{unit}.getListData.data?pageCode={pageCode}`，并在 JSON `_header_.tokenId` 中携带令牌。`pageCode` 放在 URL 查询串，实体筛选参数放在 JSON。
+> * Action 返回体 `_header_.success=false` 会作为调用失败返回；项目、任务和工时查询不会使用演示数据兜底。
+> * MCP 对 `Project`、`ProjectMethod`、`ProjectMilestone`、`Task`、`TimeReport` 模块的 Action 统一按方法名路由：`getListData` 使用 `qsvd-list`，其余方法使用 `qsvd-action`。AIPower 源码中的 `Utility.invoke("Ecp.X.y", ...)` 证明普通 Action 的业务调用和方法名，但 QuickSilver 底层分发器未包含在此 checkout；目标站点对 `qsvd-action/Ecp.TimeReport.getCurProgress.data` 的无认证 HEAD 返回 HTTP 200，尚未验证认证后的 Action 响应及写入行为。项目创建会先读取 `Ecp.ProjectMethod.getListData` 的默认专案方法，再提交项目；项目编号由 ECP 的 `FSerialNumber` 自动生成。项目健康度查询按 `Ecp.Project.TaskList` 与 `Ecp.Project.ProjectMilestoneList` 的页面关系限定数据。MCP 已接通项目/任务读取与创建、任务完结提交、个人工时查询与新填报。
+> * 工时提交先调用 `Ecp.TimeReport.addMainUnitEntity` 做日期预检（含 `getLastRecordByuser: 1`、`couldSave: 0`），正式保存不带 `getLastRecordByuser`；随后提交 `Ecp.TimeReport.addDetails`，包含 `jsonData` 和 `allDetails`。提交前会读取任务当前进度，主记录产出值目前按明细默认产出值 0 汇总；单日工时必须大于 0 且不超过 24 小时。
+> * 此 AIPower 源码没有考勤、补卡、加班、通用待审批、任务经理验收、团队工时汇总或批量催报 Action；对应 MCP 工具会明确报接口未配置，不会发送猜测请求或返回模拟成功。已有工时明细的日期目前拒绝重复追加，以免产生重复记录。
 > * `npx` 会在启动时自动拉取该 MCP 服务并直接运行，完全无需手动指定文件路径。
 > * `GIT_PROJECTS`（可选）：默认会自动识别当前在 IDE 中打开的工作区项目。若需跨多个本地仓库扫描，可添加 `"GIT_PROJECTS": "backend=/path/to/backend;frontend=/path/to/frontend"`。
 
