@@ -98,7 +98,7 @@ npm run build
 
 ### 2. 配置环境变量
 
-复制 `.env.example` 为 `.env` 并填写相关账号配置（**OA 考勤与审批接口默认共用 ECP_BASE_URL 及会话**）：
+复制 `.env.example` 为 `.env` 并填写相关账号配置（**OA 考勤与审批接口默认共用 ECP_BASE_URL 及登录会话**）：
 
 ```env
 ECP_BASE_URL=https://econtact.gemfor.com.tw/ecp
@@ -106,31 +106,41 @@ ECP_USERNAME=your_username
 ECP_PASSWORD=your_password
 ECP_AUTH_TOKEN=your_token
 
-# 配置本地 Git 项目路径（用于一键从 Commit 填报工时）
-GIT_PROJECTS=springcloud-aile=E:\develop\project\springcloud-aile;aipower=E:\develop\project\aipower
+# [可选] 跨多个本地仓库提交工时时配置，若不配则自动扫描当前打开的项目根目录
+# 格式: 项目名=本地绝对路径;项目名2=本地绝对路径2
+# GIT_PROJECTS=my-backend=/path/to/backend;my-frontend=/path/to/frontend
 DEFAULT_DAILY_HOURS=8.0
 ```
 
 ### 3. 接入 MCP Client (Cursor / Claude Desktop / Antigravity)
 
-在您的 MCP Client 配置文件中添加：
+在您的 MCP Client（如 Cursor 设置、`claude_desktop_config.json` 或 Antigravity `settings.json`）中添加配置：
+
+#### 方案 A：通用配置模板（占位符）
 
 ```json
 {
   "mcpServers": {
     "ecp-oa-mcp": {
       "command": "node",
-      "args": ["E:\\develop\\project\\ecp-oa-mcp\\dist\\index.js"],
+      "args": ["<本地项目路径>/ecp-oa-mcp/dist/index.js"],
       "env": {
         "ECP_BASE_URL": "https://econtact.gemfor.com.tw/ecp",
         "ECP_USERNAME": "your_username",
         "ECP_PASSWORD": "your_password",
-        "GIT_PROJECTS": "springcloud-aile=E:\\develop\\project\\springcloud-aile;aipower=E:\\develop\\project\\aipower"
+        "GIT_PROJECTS": "backend=/path/to/backend;frontend=/path/to/frontend"
       }
     }
   }
 }
 ```
+
+> 📌 **参数说明**：
+> * **`args`**：填写您本地克隆并执行 `npm run build` 后的 `dist/index.js` **绝对路径**。
+>   * *Windows 示例*：`"C:\\Users\\<用户名>\\develop\\ecp-oa-mcp\\dist\\index.js"`（注意使用双反斜杠 `\\` 转义）
+>   * *macOS / Linux 示例*：`"/Users/<用户名>/develop/ecp-oa-mcp/dist/index.js"`
+> * **`GIT_PROJECTS`**（可选）：跨仓库提交工时时的仓库映射列表。如果不填，默认自动扫描当前在 IDE 中打开的工作区项目。
+> * **`ECP_USERNAME` / `ECP_PASSWORD`**：您的 ECP 登录账号与密码（或者通过 `ECP_AUTH_TOKEN` 透传免登凭据）。
 
 ---
 

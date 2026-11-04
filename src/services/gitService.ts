@@ -32,7 +32,11 @@ export class GitService {
     const since = `${targetDate} 00:00:00`;
     const until = `${targetDate} 23:59:59`;
 
-    const repoList = customRepos && customRepos.length > 0 ? customRepos : config.git.projects;
+    let repoList = customRepos && customRepos.length > 0 ? customRepos : config.git.projects;
+    // 若未配置 GIT_PROJECTS，自动回退到当前工作区目录
+    if (repoList.length === 0) {
+      repoList = [{ name: 'current-workspace', path: process.cwd() }];
+    }
     const allCommits: GitCommitItem[] = [];
 
     for (const repo of repoList) {
