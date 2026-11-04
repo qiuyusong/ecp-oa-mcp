@@ -3,8 +3,8 @@ import test from 'node:test';
 import axios, { AxiosInstance } from 'axios';
 import { actionPath, EcpClient } from '../src/clients/ecpClient.js';
 
-function response(config: any, data: unknown) {
-  return { config, data, headers: {}, status: 200, statusText: 'OK' };
+function response(config: any, data: unknown, headers: Record<string, any> = {}) {
+  return { config, data, headers, status: 200, statusText: 'OK' };
 }
 
 test('list and ordinary Action endpoints use their respective .data routes', () => {
@@ -69,6 +69,26 @@ test('account token is applied and sent in the Action request body', async () =>
   assert.equal(await ecp.getUserId(), 'user-1');
 });
 
+test('session cookie from account token exchange is sent with subsequent Action requests', async () => {
+  let actionCookie: string | undefined;
+  const client = axios.create({
+    adapter: async (config) => {
+      if (config.url === '/openapi/aile/token/apply') {
+        return response(config, { _header_: { success: true }, tokenId: 'test-token' }, {
+          'set-cookie': ['JSESSIONID=session-1; Path=/ecp; HttpOnly'],
+        });
+      }
+      actionCookie = config.headers?.get?.('Cookie') || config.headers?.Cookie;
+      return response(config, { _header_: { success: true }, data: { records: [] } });
+    },
+  });
+  const ecp = new EcpClient({ baseUrl: 'https://ecp.example/ecp', username: 'account', password: 'password', client });
+
+  await ecp.postAction('Ecp.Project.getListData');
+
+  assert.equal(actionCookie, 'JSESSIONID=session-1');
+});
+
 test('list page context is encoded in the Action URL while entity filters stay in the JSON body', async () => {
   let requestUrl: string | undefined;
   let requestBody: any;
@@ -100,4 +120,15 @@ test('Action business errors are rejected even when HTTP status is 200', async (
   const ecp = new EcpClient({ username: 'account', password: 'password', client });
 
   await assert.rejects(ecp.postAction('Ecp.Project.getListData'), /Qs\.Token\.Invalid/);
+});
+
+test('Action session errors are rejected when the server returns _failed_ with HTTP 200', async () => {
+  const client = axios.create({
+    adapter: async (config) => response(config, config.url === '/openapi/aile/token/apply'
+      ? { _header_: { success: true }, tokenId: 'test-token' }
+      : { code: 'Qs.Auth.SessionInvalid', _failed: true, message: 'Please log in again.' }),
+  });
+  const ecp = new EcpClient({ username: 'account', password: 'password', client });
+
+  await assert.rejects(ecp.postAction('Ecp.Project.getListData'), /Qs\.Auth\.SessionInvalid/);
 });

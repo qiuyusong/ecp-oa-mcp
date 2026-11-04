@@ -12,15 +12,16 @@ export function actionPath(action, query = {}) {
     return `/${route}/${unit}.${method}.data${queryString ? `?${queryString}` : ''}`;
 }
 export function assertEcpSuccess(path, data) {
-    if (data?._header_?.success === false) {
+    if (data?._header_?.success === false || data?._failed === true) {
         const header = data._header_;
-        throw new Error(`ECP Action Error [${path}]: ${header.errorMessage || header.message || header.errorCode || 'request failed'}`);
+        throw new Error(`ECP Action Error [${path}]: ${header?.errorMessage || header?.message || header?.errorCode || data.code || data.message || 'request failed'}`);
     }
     return data;
 }
 export class EcpClient {
     client;
     tokenId = config.ecp.authToken || null;
+    sessionCookie = null;
     onlineUserId = config.user.userId || null;
     loginPromise = null;
     constructor(options = {}) {
@@ -60,6 +61,7 @@ export class EcpClient {
                 password: this.options.password,
                 language: 'zh-tw',
             });
+            this.updateSessionCookies(res.headers['set-cookie']);
             const data = assertEcpSuccess(path, res.data);
             if (!data.tokenId)
                 throw new Error('ECP login succeeded without tokenId');
@@ -70,6 +72,31 @@ export class EcpClient {
         catch (err) {
             throw new Error(`ECP login failed: ${err.response?.data?._header_?.errorMessage || err.message || err}`);
         }
+    }
+    updateSessionCookies(setCookie) {
+        if (!setCookie)
+            return;
+        const cookies = new Map();
+        for (const pair of this.sessionCookie?.split('; ') || []) {
+            const separator = pair.indexOf('=');
+            if (separator > 0)
+                cookies.set(pair.slice(0, separator), pair);
+        }
+        for (const value of Array.isArray(setCookie) ? setCookie : [setCookie]) {
+            const pair = value.split(';', 1)[0];
+            const separator = pair.indexOf('=');
+            if (separator <= 0)
+                continue;
+            const name = pair.slice(0, separator);
+            if (pair.slice(separator + 1) === '')
+                cookies.delete(name);
+            else
+                cookies.set(name, pair);
+        }
+        this.sessionCookie = cookies.size ? [...cookies.values()].join('; ') : null;
+    }
+    sessionConfig() {
+        return this.sessionCookie ? { headers: { Cookie: this.sessionCookie } } : undefined;
     }
     async getUserId() {
         if (!this.onlineUserId) {
@@ -91,7 +118,8 @@ export class EcpClient {
             _header_: { ...(payload._header_ || {}), tokenId: this.tokenId },
         };
         try {
-            const res = await this.client.post(path, request);
+            const res = await this.client.post(path, request, this.sessionConfig());
+            this.updateSessionCookies(res.headers['set-cookie']);
             return assertEcpSuccess(path, res.data);
         }
         catch (err) {
@@ -110,7 +138,8 @@ export class EcpClient {
             const body = this.tokenId && path.startsWith('/openapi/')
                 ? { ...payload, _header_: { ...(payload._header_ || {}), tokenId: this.tokenId } }
                 : payload;
-            const res = await this.client.post(path, body);
+            const res = await this.client.post(path, body, this.sessionConfig());
+            this.updateSessionCookies(res.headers['set-cookie']);
             return assertEcpSuccess(path, res.data);
         }
         catch (err) {
@@ -120,7 +149,8 @@ export class EcpClient {
     async get(path, params = {}) {
         await this.login();
         try {
-            const res = await this.client.get(path, { params });
+            const res = await this.client.get(path, { params, ...this.sessionConfig() });
+            this.updateSessionCookies(res.headers['set-cookie']);
             return res.data;
         }
         catch (err) {
