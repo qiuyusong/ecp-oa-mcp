@@ -37,17 +37,20 @@ function parseGitProjects(raw?: string): Array<{ name: string; path: string }> {
     .filter((p) => p.name && p.path);
 }
 
+const ecpBaseUrl = process.env.ECP_BASE_URL || 'https://econtact.gemfor.com.tw/ecp';
+
 export const config: Config = {
   ecp: {
-    baseUrl: process.env.ECP_BASE_URL || 'https://econtact.gemfor.com.tw/ecp',
+    baseUrl: ecpBaseUrl,
     username: process.env.ECP_USERNAME,
     password: process.env.ECP_PASSWORD,
     tenantId: process.env.ECP_TENANT_ID,
     authToken: process.env.ECP_AUTH_TOKEN,
   },
   oa: {
-    baseUrl: process.env.OA_BASE_URL || 'http://localhost:12822',
-    authToken: process.env.OA_AUTH_TOKEN,
+    // 共用 ECP URL，若未指定 OA_BASE_URL 则直接回退使用 ECP_BASE_URL
+    baseUrl: process.env.OA_BASE_URL || ecpBaseUrl,
+    authToken: process.env.OA_AUTH_TOKEN || process.env.ECP_AUTH_TOKEN,
   },
   user: {
     userId: process.env.USER_ID,

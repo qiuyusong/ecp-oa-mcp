@@ -91,6 +91,16 @@ export class EcpClient {
       throw new Error(`ECP API Error [${path}]: ${err.response?.data?.message || err.message}`);
     }
   }
+
+  // Generic GET caller for ECP API
+  public async get<T = any>(path: string, params: Record<string, any> = {}): Promise<T> {
+    try {
+      const res = await this.client.get(path, { params });
+      return res.data;
+    } catch (err: any) {
+      throw new Error(`ECP API Error [${path}]: ${err.response?.data?.message || err.message}`);
+    }
+  }
 }
 
 export const ecpClient = new EcpClient();

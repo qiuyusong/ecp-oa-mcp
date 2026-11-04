@@ -98,7 +98,7 @@ npm run build
 
 ### 2. 配置环境变量
 
-复制 `.env.example` 为 `.env` 并填写相关账号配置：
+复制 `.env.example` 为 `.env` 并填写相关账号配置（**OA 考勤与审批接口默认共用 ECP_BASE_URL 及会话**）：
 
 ```env
 ECP_BASE_URL=https://econtact.gemfor.com.tw/ecp
@@ -106,11 +106,8 @@ ECP_USERNAME=your_username
 ECP_PASSWORD=your_password
 ECP_AUTH_TOKEN=your_token
 
-OA_BASE_URL=http://localhost:12822
-OA_AUTH_TOKEN=your_token
-
 # 配置本地 Git 项目路径（用于一键从 Commit 填报工时）
-GIT_PROJECTS=springcloud-aile=E:\develop\project\springcloud-aile;AuthServer=E:\develop\project\AuthServer\authserver
+GIT_PROJECTS=springcloud-aile=E:\develop\project\springcloud-aile;aipower=E:\develop\project\aipower
 DEFAULT_DAILY_HOURS=8.0
 ```
 
@@ -127,7 +124,8 @@ DEFAULT_DAILY_HOURS=8.0
       "env": {
         "ECP_BASE_URL": "https://econtact.gemfor.com.tw/ecp",
         "ECP_USERNAME": "your_username",
-        "ECP_PASSWORD": "your_password"
+        "ECP_PASSWORD": "your_password",
+        "GIT_PROJECTS": "springcloud-aile=E:\\develop\\project\\springcloud-aile;aipower=E:\\develop\\project\\aipower"
       }
     }
   }
