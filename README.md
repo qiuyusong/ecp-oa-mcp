@@ -88,59 +88,65 @@ flowchart TD
 
 ## ⚙️ 快速安装与配置
 
-### 1. 安装依赖与构建
+### 1. 推荐：通过 npx 接入（零本地路径，开箱即用）
 
-```bash
-cd ecp-oa-mcp
-npm install
-npm run build
-```
-
-### 2. 配置环境变量
-
-复制 `.env.example` 为 `.env` 并填写相关账号配置（**OA 考勤与审批接口默认共用 ECP_BASE_URL 及登录会话**）：
-
-```env
-ECP_BASE_URL=https://econtact.gemfor.com.tw/ecp
-ECP_USERNAME=your_username
-ECP_PASSWORD=your_password
-ECP_AUTH_TOKEN=your_token
-
-# [可选] 跨多个本地仓库提交工时时配置，若不配则自动扫描当前打开的项目根目录
-# 格式: 项目名=本地绝对路径;项目名2=本地绝对路径2
-# GIT_PROJECTS=my-backend=/path/to/backend;my-frontend=/path/to/frontend
-DEFAULT_DAILY_HOURS=8.0
-```
-
-### 3. 接入 MCP Client (Cursor / Claude Desktop / Antigravity)
-
-在您的 MCP Client（如 Cursor 设置、`claude_desktop_config.json` 或 Antigravity `settings.json`）中添加配置：
-
-#### 方案 A：通用配置模板（占位符）
+正常用户**不需要克隆代码到本地，也不需要关心本地路径在哪**。直接在您的 MCP Client（如 Cursor 设置、`claude_desktop_config.json` 或 Antigravity `settings.json`）中添加以下配置：
 
 ```json
 {
   "mcpServers": {
     "ecp-oa-mcp": {
-      "command": "node",
-      "args": ["<本地项目路径>/ecp-oa-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:qiuyusong/ecp-oa-mcp"],
       "env": {
         "ECP_BASE_URL": "https://econtact.gemfor.com.tw/ecp",
         "ECP_USERNAME": "your_username",
-        "ECP_PASSWORD": "your_password",
-        "GIT_PROJECTS": "backend=/path/to/backend;frontend=/path/to/frontend"
+        "ECP_PASSWORD": "your_password"
       }
     }
   }
 }
 ```
 
-> 📌 **参数说明**：
-> * **`args`**：填写您本地克隆并执行 `npm run build` 后的 `dist/index.js` **绝对路径**。
->   * *Windows 示例*：`"C:\\Users\\<用户名>\\develop\\ecp-oa-mcp\\dist\\index.js"`（注意使用双反斜杠 `\\` 转义）
->   * *macOS / Linux 示例*：`"/Users/<用户名>/develop/ecp-oa-mcp/dist/index.js"`
-> * **`GIT_PROJECTS`**（可选）：跨仓库提交工时时的仓库映射列表。如果不填，默认自动扫描当前在 IDE 中打开的工作区项目。
-> * **`ECP_USERNAME` / `ECP_PASSWORD`**：您的 ECP 登录账号与密码（或者通过 `ECP_AUTH_TOKEN` 透传免登凭据）。
+> 💡 **提示**：
+> * 只需配置 **`ECP_BASE_URL`**、**`ECP_USERNAME`** 和 **`ECP_PASSWORD`** 即可。
+> * `npx` 会在启动时自动拉取该 MCP 服务并直接运行，完全无需手动指定文件路径。
+> * `GIT_PROJECTS`（可选）：默认会自动识别当前在 IDE 中打开的工作区项目。若需跨多个本地仓库扫描，可添加 `"GIT_PROJECTS": "backend=/path/to/backend;frontend=/path/to/frontend"`。
+
+---
+
+### 2. 开发者模式（本地源码调试）
+
+如果您需要二次开发或本地调试本服务：
+
+```bash
+# 1. 克隆并安装
+git clone https://github.com/qiuyusong/ecp-oa-mcp.git
+cd ecp-oa-mcp
+npm install
+npm run build
+
+# 2. 复制环境变量
+cp .env.example .env
+```
+
+在 MCP Client 中配置为本地 node 执行：
+
+```json
+{
+  "mcpServers": {
+    "ecp-oa-mcp": {
+      "command": "node",
+      "args": ["/本地源码路径/ecp-oa-mcp/dist/index.js"],
+      "env": {
+        "ECP_BASE_URL": "https://econtact.gemfor.com.tw/ecp",
+        "ECP_USERNAME": "your_username",
+        "ECP_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
 
 ---
 

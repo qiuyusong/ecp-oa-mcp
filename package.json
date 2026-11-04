@@ -6,9 +6,13 @@
   "bin": {
     "ecp-oa-mcp": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
