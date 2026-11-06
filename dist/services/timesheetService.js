@@ -8,9 +8,7 @@ export class TimesheetService {
         const date = dateStr || new Date().toISOString().split('T')[0];
         const userId = await ecpClient.getUserId();
         const taskRes = await ecpClient.postAction('Ecp.TimeReport.getAllRelevantObjs', { userId });
-        const rawTasks = taskRes?.taskItems;
-        if (!Array.isArray(rawTasks))
-            throw new Error('ECP TimeReport Action response has no taskItems array.');
+        const rawTasks = Array.isArray(taskRes?.taskItems) ? taskRes.taskItems : (Array.isArray(taskRes?.data) ? taskRes.data : []);
         const tasks = rawTasks.map((task) => ({
             id: task.value || task.FId || task.id,
             taskName: task.text || task.FName || task.name || task.taskName,
@@ -20,9 +18,7 @@ export class TimesheetService {
         const detailRes = await ecpClient.postAction('Ecp.TimeReport.getAllDetailDatas', {
             dateTime: `${date} 00:00:00`,
         });
-        const rawDetails = detailRes?.datas;
-        if (!Array.isArray(rawDetails))
-            throw new Error('ECP TimeReport Action response has no datas array.');
+        const rawDetails = Array.isArray(detailRes?.datas) ? detailRes.datas : (Array.isArray(detailRes?.data) ? detailRes.data : []);
         let todayHours = 0;
         const details = rawDetails.map((detail) => {
             const hours = Number(detail.FWorkTime || detail.workHours || 0);
