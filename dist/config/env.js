@@ -13,7 +13,7 @@ function parseGitProjects(raw) {
     })
         .filter((p) => p.name && p.path);
 }
-const ecpBaseUrl = process.env.ECP_BASE_URL || 'https://econtact.gemfor.com.tw/ecp';
+const ecpBaseUrl = process.env.ECP_BASE_URL || 'https://your-ecp-domain.com/ecp';
 export const config = {
     ecp: {
         baseUrl: ecpBaseUrl,

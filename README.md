@@ -99,7 +99,7 @@ flowchart TD
       "command": "npx",
       "args": ["-y", "github:qiuyusong/ecp-oa-mcp"],
       "env": {
-        "ECP_BASE_URL": "https://econtact.gemfor.com.tw/ecp",
+        "ECP_BASE_URL": "https://your-ecp-domain.com/ecp",
         "ECP_USERNAME": "your_username",
         "ECP_PASSWORD": "your_password"
       }
@@ -144,7 +144,7 @@ cp .env.example .env
       "command": "node",
       "args": ["/本地源码路径/ecp-oa-mcp/dist/index.js"],
       "env": {
-        "ECP_BASE_URL": "https://econtact.gemfor.com.tw/ecp",
+        "ECP_BASE_URL": "https://your-ecp-domain.com/ecp",
         "ECP_USERNAME": "your_username",
         "ECP_PASSWORD": "your_password"
       }
