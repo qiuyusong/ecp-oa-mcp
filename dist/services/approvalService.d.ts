@@ -1,16 +1,26 @@
 import { ApprovalCategory, ApprovalItem, AuditActionInput } from '../types/index.js';
 export declare class ApprovalService {
-    listPendingApprovals(_category?: ApprovalCategory): Promise<ApprovalItem[]>;
+    /**
+     * List pending approvals / work items for the current user
+     */
+    listPendingApprovals(category?: ApprovalCategory): Promise<ApprovalItem[]>;
+    /**
+     * Execute single approval or rejection
+     */
     auditAction(input: AuditActionInput): Promise<{
         success: boolean;
         message: string;
     }>;
-    batchAudit(approvalIds: string[], _action?: 'APPROVE', _defaultComment?: string): Promise<{
+    /**
+     * Batch approve / reject pending work items
+     */
+    batchAudit(approvalIds: string[], action?: 'APPROVE' | 'REJECT', defaultComment?: string): Promise<{
         success: boolean;
         processedCount: number;
         results: Array<{
             id: string;
             success: boolean;
+            message?: string;
         }>;
     }>;
 }

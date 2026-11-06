@@ -1,4 +1,4 @@
-import { TimeReportDashboard, SubmitTimesheetInput, TeamMemberTimesheetSummary } from '../types/index.js';
+import { TimeReportDashboard, SubmitTimesheetInput, TeamMemberTimesheetSummary, UpdateTimesheetDetailInput } from '../types/index.js';
 export declare class TimesheetService {
     /**
      * Get timesheet dashboard for a specific date (today by default)
@@ -8,6 +8,20 @@ export declare class TimesheetService {
      * Submit timesheet entries
      */
     submitTimesheet(input: SubmitTimesheetInput): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    /**
+     * Update an existing timesheet detail entry
+     */
+    updateDetail(input: UpdateTimesheetDetailInput): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    /**
+     * Delete an existing timesheet detail entry
+     */
+    deleteDetail(trpDetailId: string, timeReportId?: string): Promise<{
         success: boolean;
         message: string;
     }>;
@@ -38,6 +52,7 @@ export declare class TimesheetService {
     remindMembers(userIds: string[], message?: string): Promise<{
         success: boolean;
         remindedCount: number;
+        message: string;
     }>;
 }
 export declare const timesheetService: TimesheetService;

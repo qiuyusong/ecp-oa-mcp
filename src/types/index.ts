@@ -139,12 +139,32 @@ export interface TeamAttendanceDashboard {
 // Unified Workflow & Approval Data Types
 // ==========================================
 
+export interface UpdateTimesheetDetailInput {
+  trpDetailId: string;
+  taskId?: string;
+  hours: number;
+  description?: string;
+  activityType?: string;
+  date?: string;
+}
+
+export interface AnnouncementItem {
+  id: string;
+  title: string;
+  content?: string;
+  publishUser?: string;
+  publishTime?: string;
+  isRead?: boolean;
+  isPinned?: boolean;
+}
+
 export type ApprovalCategory =
   | 'CLOCK_REPAIR'   // 补卡审批
   | 'OVERTIME'       // 加班审批
   | 'LEAVE'          // 请假审批
   | 'TASK_FINISH'    // 任务验收
-  | 'PROJECT_DELAY'; // 专案延期
+  | 'PROJECT_DELAY'  // 专案延期
+  | 'GENERAL_WORKITEM'; // 通用工作项待办
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 

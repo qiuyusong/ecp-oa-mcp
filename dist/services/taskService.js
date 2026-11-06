@@ -31,23 +31,38 @@ export class TaskService {
      * Personal: Update progress or submit completion for personal task
      */
     async updateMyTask(input) {
-        if (!input.isFinished) {
-            throw new Error('AIPower has no Task Action for directly setting progress or actual hours. Progress and hours are derived from submitted time reports.');
+        if (input.isFinished) {
+            const check = await ecpClient.postAction('Ecp.Task.doFinishCheck', { taskId: input.taskId });
+            if (check?.allFinished === false)
+                throw new Error('Task cannot be submitted for completion until all collaborators finish.');
+            const res = await ecpClient.postAction('Ecp.Task.submit', {
+                entityIds: [input.taskId],
+                data: {
+                    FFinishDescription: input.finishDescription,
+                    FCompletedDate: new Date().toISOString(),
+                },
+                workflowCode: 'Ecp.Task.FinishAudit',
+            });
+            return {
+                success: true,
+                message: `任务已提交完结验收。${res?.entityIds?.[0] ? `任务 ID：${res.entityIds[0]}` : ''}`,
+            };
         }
-        const check = await ecpClient.postAction('Ecp.Task.doFinishCheck', { taskId: input.taskId });
-        if (check?.allFinished === false)
-            throw new Error('Task cannot be submitted for completion until all collaborators finish.');
-        const res = await ecpClient.postAction('Ecp.Task.submit', {
-            entityIds: [input.taskId],
-            data: {
-                FFinishDescription: input.finishDescription,
-                FCompletedDate: new Date().toISOString(),
-            },
-            workflowCode: 'Ecp.Task.FinishAudit',
+        // Updating in-progress progress and description directly
+        const updateData = {
+            FId: input.taskId,
+            FProgress: input.progress,
+        };
+        if (input.finishDescription)
+            updateData.FTaskDescription = input.finishDescription;
+        if (input.actualHours)
+            updateData.FHours = input.actualHours;
+        await ecpClient.postAction('Ecp.Task.save', {
+            data: updateData,
         });
         return {
             success: true,
-            message: `任务已提交完结验收。${res?.entityIds?.[0] ? `任务 ID：${res.entityIds[0]}` : ''}`,
+            message: `任务 ${input.taskId} 进度已更新为 ${input.progress}%。`,
         };
     }
     /**
@@ -111,9 +126,22 @@ export class TaskService {
      * Managerial: Audit / Accept task completion
      */
     async auditTaskFinish(taskId, approve, comment) {
-        void approve;
-        void comment;
-        throw new Error(`AIPower exposes task submission through Ecp.Task.submit, but this source does not provide a manager task-audit Action for task ${taskId}.`);
+        const workItemRes = await ecpClient.postAction('Ecp.Task.getworkItemId', { entityId: taskId });
+        const workItemId = workItemRes?.workItemId || workItemRes?.data?.workItemId;
+        if (!workItemId) {
+            throw new Error(`未找到任务 ${taskId} 对应的审批工作项，任务可能未提交完结审批或已结项。`);
+        }
+        const result = approve ? 'pass' : 'reject';
+        const auditComment = comment || (approve ? '任务完结验收通过' : '任务验收驳回，需继续完善');
+        await ecpClient.postAction('Wf.WorkItem.finish', {
+            workItemId,
+            result,
+            comment: auditComment,
+        });
+        return {
+            success: true,
+            message: `任务 ${taskId} 完结验收已${approve ? '通过并归档' : '驳回修改'}。`,
+        };
     }
 }
 export const taskService = new TaskService();

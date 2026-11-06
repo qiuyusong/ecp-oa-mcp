@@ -4,6 +4,8 @@ import { ecpClient } from '../src/clients/ecpClient.js';
 import { ProjectService } from '../src/services/projectService.js';
 import { TaskService } from '../src/services/taskService.js';
 import { TimesheetService } from '../src/services/timesheetService.js';
+import { ApprovalService } from '../src/services/approvalService.js';
+import { AnnouncementService } from '../src/services/announcementService.js';
 
 async function withEcpMocks<T>(
   mocks: {
@@ -200,4 +202,155 @@ test('timesheet submission rejects rows that violate the page required fields an
       assert.equal(mainActionCalled, false);
     });
   }
+});
+
+test('approval service queries Quicksilver WorkItem homepage todo items and finishes approval', async () => {
+  const approvalService = new ApprovalService();
+  const requests: Array<{ action: string; payload?: any }> = [];
+
+  const items = await withEcpMocks({
+    postAction: async (action, payload) => {
+      requests.push({ action, payload });
+      if (action === 'Wf.WorkItem.getHomepageTodoListData') {
+        return {
+          totalSize: 1,
+          data: [
+            {
+              FId: 'workitem-101',
+              FName: '任务完结验收: 登录接口重构',
+              FProcessId: 'proc-1',
+              'FProcessId$': '任务完结流程',
+              FSubmitUserId: 'user-2',
+              'FSubmitUserId$': '张三',
+              FStartTime: '2026-11-05 10:00:00',
+            },
+          ],
+        };
+      }
+      if (action === 'Wf.WorkItem.finish') {
+        return { success: true };
+      }
+      throw new Error(`Unexpected Action ${action}`);
+    },
+  }, async () => {
+    const list = await approvalService.listPendingApprovals();
+    await approvalService.auditAction({ approvalId: 'workitem-101', action: 'APPROVE', comment: '验收通过' });
+    return list;
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'workitem-101');
+  assert.equal(items[0].category, 'TASK_FINISH');
+  assert.equal(items[0].applicantName, '张三');
+
+  const finishReq = requests.find((r) => r.action === 'Wf.WorkItem.finish');
+  assert.deepEqual(finishReq?.payload, {
+    workItemId: 'workitem-101',
+    result: 'pass',
+    comment: '验收通过',
+  });
+});
+
+test('task finish audit looks up work item from Ecp.Task and finishes it in workflow engine', async () => {
+  const taskService = new TaskService();
+  const requests: Array<{ action: string; payload?: any }> = [];
+
+  const res = await withEcpMocks({
+    postAction: async (action, payload) => {
+      requests.push({ action, payload });
+      if (action === 'Ecp.Task.getworkItemId') {
+        return { workItemId: 'workitem-202' };
+      }
+      if (action === 'Wf.WorkItem.finish') {
+        return { success: true };
+      }
+      throw new Error(`Unexpected Action ${action}`);
+    },
+  }, async () => taskService.auditTaskFinish('task-abc', true, '验收通过'));
+
+  assert.equal(res.success, true);
+  assert.deepEqual(requests[0], { action: 'Ecp.Task.getworkItemId', payload: { entityId: 'task-abc' } });
+  assert.deepEqual(requests[1], {
+    action: 'Wf.WorkItem.finish',
+    payload: {
+      workItemId: 'workitem-202',
+      result: 'pass',
+      comment: '验收通过',
+    },
+  });
+});
+
+test('timesheet service supports updating and deleting individual detail rows', async () => {
+  const timesheetService = new TimesheetService();
+  const requests: Array<{ action: string; payload?: any }> = [];
+
+  await withEcpMocks({
+    postAction: async (action, payload) => {
+      requests.push({ action, payload });
+      if (action === 'Ecp.TimeReport.updateTimeReportDetail') {
+        return { isSuccess: true };
+      }
+      if (action === 'Ecp.TimeReport.doDeleteForMecp') {
+        return { isSuccess: true };
+      }
+      throw new Error(`Unexpected Action ${action}`);
+    },
+  }, async () => {
+    await timesheetService.updateDetail({
+      trpDetailId: 'detail-1',
+      taskId: 'task-1',
+      hours: 4.5,
+      description: '修改后的研发描述',
+      activityType: '研发',
+      date: '2026-11-05',
+    });
+    await timesheetService.deleteDetail('detail-2', 'header-1');
+  });
+
+  assert.equal(requests[0].action, 'Ecp.TimeReport.updateTimeReportDetail');
+  assert.equal(requests[0].payload.trpDetail, 'detail-1');
+  assert.equal(requests[0].payload.workHours, 4.5);
+
+  assert.equal(requests[1].action, 'Ecp.TimeReport.doDeleteForMecp');
+  assert.equal(requests[1].payload.trpDetailId, 'detail-2');
+  assert.equal(requests[1].payload.timeReportId, 'header-1');
+});
+
+test('announcement service lists and publishes enterprise proclamations', async () => {
+  const announcementService = new AnnouncementService();
+  const requests: Array<{ action: string; payload?: any }> = [];
+
+  const list = await withEcpMocks({
+    postAction: async (action, payload) => {
+      requests.push({ action, payload });
+      if (action === 'Ecp.Proclamation.getListData') {
+        return {
+          data: {
+            records: [
+              {
+                FId: 'ann-1',
+                FName: '国庆放假通知',
+                FContent: '放假安排说明...',
+                'FUserId$': 'HR',
+                FPublishDate: '2026-09-30 09:00:00',
+              },
+            ],
+          },
+        };
+      }
+      if (action === 'Ecp.Proclamation.save') {
+        return { entityId: 'ann-2' };
+      }
+      throw new Error(`Unexpected Action ${action}`);
+    },
+  }, async () => {
+    const records = await announcementService.listAnnouncements();
+    await announcementService.publishAnnouncement('项目发版通知', '请各模块负责人完成集成验证');
+    return records;
+  });
+
+  assert.equal(list.length, 1);
+  assert.equal(list[0].title, '国庆放假通知');
+  assert.equal(requests[1].action, 'Ecp.Proclamation.save');
+  assert.equal(requests[1].payload.data.FName, '项目发版通知');
 });

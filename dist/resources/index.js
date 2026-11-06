@@ -1,7 +1,7 @@
 import { timesheetService } from '../services/timesheetService.js';
-import { clockService } from '../services/clockService.js';
 import { taskService } from '../services/taskService.js';
 import { approvalService } from '../services/approvalService.js';
+import { announcementService } from '../services/announcementService.js';
 export function registerResources(server) {
     // Resource 1: Today's Timesheet Overview
     server.resource('today-timesheet', 'ecp://timereport/today', {
@@ -18,22 +18,7 @@ export function registerResources(server) {
             ],
         };
     });
-    // Resource 2: Today's Clock Status
-    server.resource('today-clock-status', 'oa://clock/status', {
-        description: '今日个人考勤打卡状态（上班卡、下班卡）',
-        mimeType: 'application/json',
-    }, async (uri) => {
-        const data = await clockService.getMyStatus();
-        return {
-            contents: [
-                {
-                    uri: uri.href,
-                    text: JSON.stringify(data, null, 2),
-                },
-            ],
-        };
-    });
-    // Resource 3: My Pending Tasks
+    // Resource 2: My Pending Tasks
     server.resource('my-pending-tasks', 'ecp://tasks/my-pending', {
         description: '当前用户负责的进行中任务列表',
         mimeType: 'application/json',
@@ -48,12 +33,27 @@ export function registerResources(server) {
             ],
         };
     });
-    // Resource 4: Pending Approval Queue
+    // Resource 3: Pending Approval Queue
     server.resource('pending-approvals', 'oa://approvals/pending', {
-        description: '当前待审批单据池快照（补卡、加班、任务验收）',
+        description: '当前待审批单据池快照（基于底座 WorkItem 待办列表）',
         mimeType: 'application/json',
     }, async (uri) => {
         const data = await approvalService.listPendingApprovals();
+        return {
+            contents: [
+                {
+                    uri: uri.href,
+                    text: JSON.stringify(data, null, 2),
+                },
+            ],
+        };
+    });
+    // Resource 4: Latest Announcements
+    server.resource('latest-announcements', 'ecp://announcements/latest', {
+        description: '企业最新公告与通知列表',
+        mimeType: 'application/json',
+    }, async (uri) => {
+        const data = await announcementService.listAnnouncements();
         return {
             contents: [
                 {

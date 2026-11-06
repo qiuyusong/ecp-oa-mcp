@@ -12,7 +12,7 @@ export function actionPath(action: string, query: Record<string, string> = {}): 
   const parts = action.split('.');
   const method = parts.pop();
   const unit = parts.join('.');
-  if (!unit || !method || !/^Ecp(?:\.[A-Za-z0-9_]+)+$/.test(unit) || !/^[A-Za-z0-9_]+$/.test(method)) {
+  if (!unit || !method || !/^(?:Ecp|Qs|Wf)(?:\.[A-Za-z0-9_]+)+$/.test(unit) || !/^[A-Za-z0-9_]+$/.test(method)) {
     throw new Error(`Invalid ECP Action name: ${action}`);
   }
   const route = method === 'getListData' ? 'qsvd-list' : 'qsvd-action';

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { timesheetService } from '../services/timesheetService.js';
-import { clockService } from '../services/clockService.js';
 import { projectService } from '../services/projectService.js';
 import { taskService } from '../services/taskService.js';
 import { approvalService } from '../services/approvalService.js';
+import { announcementService } from '../services/announcementService.js';
 export function registerTools(server) {
     // ==========================================
     // 1. 工时管理工具 (Timesheet Tools)
@@ -16,19 +16,41 @@ export function registerTools(server) {
             content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
         };
     });
-    server.tool('ecp_submit_timesheet', '手工提交个人工时明细到 ECP 系统', {
+    server.tool('ecp_submit_timesheet', '手工提交个人工时明细到 ECP 系统（支持初次填报与同日追加）', {
         date: z.string().describe('填报日期，格式 YYYY-MM-DD'),
         entries: z
             .array(z.object({
             taskId: z.string().describe('关联任务 ID'),
             hours: z.number().describe('工时数（小时）'),
             description: z.string().describe('工作内容描述'),
-            activityType: z.string().optional().describe('活动类型，如“研发”、“会议”、“休假”'),
+            activityType: z.string().optional().describe('活动类型，如“研发”、“会议”、“设计”'),
             activityDetail: z.string().optional().describe('活动明细'),
         }))
             .describe('工时明细列表'),
     }, async (input) => {
         const res = await timesheetService.submitTimesheet(input);
+        return {
+            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+        };
+    });
+    server.tool('ecp_update_timesheet_detail', '更新指定的一条工时明细（调整任务、时数、工作描述等）', {
+        trpDetailId: z.string().describe('工时明细 ID'),
+        hours: z.number().describe('调整后的工时数（小时）'),
+        description: z.string().optional().describe('工作内容描述'),
+        activityType: z.string().optional().describe('活动类型'),
+        taskId: z.string().optional().describe('关联任务 ID'),
+        date: z.string().optional().describe('工时所属日期，格式 YYYY-MM-DD'),
+    }, async (input) => {
+        const res = await timesheetService.updateDetail(input);
+        return {
+            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+        };
+    });
+    server.tool('ecp_delete_timesheet_detail', '删除指定的工时明细条目并自动重新计算当日工时', {
+        trpDetailId: z.string().describe('待删除的工时明细 ID'),
+        timeReportId: z.string().optional().describe('工时主记录 ID（可选）'),
+    }, async ({ trpDetailId, timeReportId }) => {
+        const res = await timesheetService.deleteDetail(trpDetailId, timeReportId);
         return {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };
@@ -42,16 +64,16 @@ export function registerTools(server) {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };
     });
-    server.tool('ecp_get_team_timesheet_summary', '【接口待配置】查询团队工时合规概况；当前 AIPower 源码未发现成员枚举及团队汇总 Action。', {
+    server.tool('ecp_get_team_timesheet_summary', '【主管管理】查询管辖团队或专案成员在指定日期的工时合规与填报大盘', {
         date: z.string().optional().describe('查询日期，格式 YYYY-MM-DD，默认今天'),
-        departmentId: z.string().optional().describe('指定部门 ID'),
+        departmentId: z.string().optional().describe('指定部门 ID（可选）'),
     }, async ({ date, departmentId }) => {
         const res = await timesheetService.getTeamTimesheetSummary(date, departmentId);
         return {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };
     });
-    server.tool('ecp_remind_missing_timesheet', '【接口待配置】催报团队工时；当前 AIPower 源码未发现批量通知 Action。', {
+    server.tool('ecp_remind_missing_timesheet', '【主管管理】向漏填或未满 8 小时的成员发送系统工时催报通知', {
         userIds: z.array(z.string()).describe('被提醒的成员用户 ID 列表'),
         message: z.string().optional().describe('催填提醒文字内容'),
     }, async ({ userIds, message }) => {
@@ -61,63 +83,7 @@ export function registerTools(server) {
         };
     });
     // ==========================================
-    // 2. 考勤打卡与个人申请工具 (Clock & Attendance)
-    // ==========================================
-    server.tool('oa_get_clock_status', '【接口待配置】查询个人打卡状态；当前 AIPower 源码未发现考勤 Action。', {}, async () => {
-        const res = await clockService.getMyStatus();
-        return {
-            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
-        };
-    });
-    server.tool('oa_punch_clock', '【接口待配置】执行打卡；当前 AIPower 源码未发现考勤 Action。', {
-        action: z.enum(['CHECK_IN', 'CHECK_OUT']).describe('打卡动作：CHECK_IN=上班打卡, CHECK_OUT=下班打卡'),
-        locationName: z.string().optional().default('办公室 WiFi / 正常').describe('打卡地点备注'),
-    }, async ({ action, locationName }) => {
-        const res = await clockService.punch(action, locationName);
-        return {
-            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
-        };
-    });
-    server.tool('oa_apply_clock_repair', '【接口待配置】发起补卡申请；当前 AIPower 源码未发现考勤申请 Action。', {
-        date: z.string().describe('补卡日期，格式 YYYY-MM-DD'),
-        punchTime: z.string().describe('补卡具体时间，如 18:30:00'),
-        type: z.enum(['CHECK_IN', 'CHECK_OUT']).describe('补卡类型：上班卡 / 下班卡'),
-        reason: z.string().describe('补卡详细原因'),
-    }, async (input) => {
-        const res = await clockService.applyClockRepair(input);
-        return {
-            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
-        };
-    });
-    server.tool('oa_apply_overtime', '【接口待配置】发起加班申请；当前 AIPower 源码未发现考勤申请 Action。', {
-        date: z.string().describe('加班日期，格式 YYYY-MM-DD'),
-        startTime: z.string().describe('开始时间，如 18:00:00'),
-        endTime: z.string().describe('结束时间，如 20:30:00'),
-        hours: z.number().describe('折算加班时数，如 2.5'),
-        reason: z.string().describe('加班事由'),
-        projectId: z.string().optional().describe('关联专案 ID'),
-    }, async (input) => {
-        const res = await clockService.applyOvertime(input);
-        return {
-            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
-        };
-    });
-    server.tool('oa_list_my_applications', '【接口待配置】查询个人审批单；当前 AIPower 源码未发现对应 Action。', {}, async () => {
-        const res = await clockService.listMyApplications();
-        return {
-            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
-        };
-    });
-    server.tool('oa_get_team_attendance_dashboard', '【接口待配置】查询团队考勤；当前 AIPower 源码未发现考勤 Action。', {
-        date: z.string().optional().describe('查询日期，格式 YYYY-MM-DD，默认今天'),
-    }, async ({ date }) => {
-        const res = await clockService.getTeamAttendance(date);
-        return {
-            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
-        };
-    });
-    // ==========================================
-    // 3. 专案管理工具 (Project Tools)
+    // 2. 专案管理工具 (Project Tools)
     // ==========================================
     server.tool('ecp_create_project', '创建新专案，默认将专案经理（PM）指定为您本人', {
         name: z.string().describe('专案名称'),
@@ -148,7 +114,7 @@ export function registerTools(server) {
         };
     });
     // ==========================================
-    // 4. 任务管理工具 (Task Tools)
+    // 3. 任务管理工具 (Task Tools)
     // ==========================================
     server.tool('ecp_create_task', '创建新任务，支持指派给自己或分派给下属团队成员', {
         projectId: z.string().describe('所属专案 ID'),
@@ -164,11 +130,11 @@ export function registerTools(server) {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };
     });
-    server.tool('ecp_update_my_task', '更新个人名下任务进度，或申请完结验收', {
+    server.tool('ecp_update_my_task', '更新个人名下任务进度与描述，或提交完结验收', {
         taskId: z.string().describe('任务 ID'),
         progress: z.number().min(0).max(100).describe('任务进度百分比 (0 - 100)'),
         actualHours: z.number().optional().describe('已消耗实际工时'),
-        finishDescription: z.string().optional().describe('交付物与完结说明'),
+        finishDescription: z.string().optional().describe('交付物与完结说明/更新说明'),
         isFinished: z.boolean().optional().default(false).describe('是否标记为已完成并申请验收'),
     }, async (input) => {
         const res = await taskService.updateMyTask(input);
@@ -204,11 +170,11 @@ export function registerTools(server) {
         };
     });
     // ==========================================
-    // 5. 统一审核流程工具 (Unified Approval Tools)
+    // 4. 统一审核流程工具 (Unified Approval Tools)
     // ==========================================
-    server.tool('oa_list_pending_approvals', '【接口待配置】查询待审批列表；当前 AIPower 源码未发现通用审批队列 Action。', {
+    server.tool('oa_list_pending_approvals', '【主管管理】查询当前用户待审批的工作项与流程待办列表（基于底座 WorkItem 引擎）', {
         category: z
-            .enum(['CLOCK_REPAIR', 'OVERTIME', 'LEAVE', 'TASK_FINISH', 'PROJECT_DELAY'])
+            .enum(['CLOCK_REPAIR', 'OVERTIME', 'LEAVE', 'TASK_FINISH', 'PROJECT_DELAY', 'GENERAL_WORKITEM'])
             .optional()
             .describe('流程类别筛选'),
     }, async ({ category }) => {
@@ -217,8 +183,8 @@ export function registerTools(server) {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };
     });
-    server.tool('oa_audit_action', '【接口待配置】执行审批；当前 AIPower 源码未发现通用审批 Action。', {
-        approvalId: z.string().describe('审批单据 ID'),
+    server.tool('oa_audit_action', '【主管管理】对指定的工作项审批单据执行通过或驳回', {
+        approvalId: z.string().describe('审批单据/工作项 ID (workItemId)'),
         action: z.enum(['APPROVE', 'REJECT']).describe('审批结果：APPROVE=通过, REJECT=驳回'),
         comment: z.string().optional().describe('审批意见批语'),
     }, async (input) => {
@@ -227,11 +193,29 @@ export function registerTools(server) {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };
     });
-    server.tool('oa_batch_audit', '【接口待配置】批量审批；当前 AIPower 源码未发现通用审批 Action。', {
-        approvalIds: z.array(z.string()).describe('待审批单据 ID 列表'),
+    server.tool('oa_batch_audit', '【主管管理】批量快速审批通过选定的待办工作项', {
+        approvalIds: z.array(z.string()).describe('待审批工作项 ID 列表'),
         defaultComment: z.string().optional().default('经核实无误，批量审批通过。').describe('统一批语'),
     }, async ({ approvalIds, defaultComment }) => {
         const res = await approvalService.batchAudit(approvalIds, 'APPROVE', defaultComment);
+        return {
+            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+        };
+    });
+    // ==========================================
+    // 5. 企业公告管理 (Proclamation / Announcement)
+    // ==========================================
+    server.tool('ecp_list_announcements', '查询企业或部门发布的最新公告列表', {}, async () => {
+        const res = await announcementService.listAnnouncements();
+        return {
+            content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+        };
+    });
+    server.tool('ecp_publish_announcement', '【主管发布】发布新的企业或团队通知公告', {
+        title: z.string().describe('公告标题'),
+        content: z.string().describe('公告正文内容'),
+    }, async ({ title, content }) => {
+        const res = await announcementService.publishAnnouncement(title, content);
         return {
             content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
         };

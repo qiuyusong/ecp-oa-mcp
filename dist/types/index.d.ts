@@ -116,7 +116,24 @@ export interface TeamAttendanceDashboard {
         leaveType?: string;
     }>;
 }
-export type ApprovalCategory = 'CLOCK_REPAIR' | 'OVERTIME' | 'LEAVE' | 'TASK_FINISH' | 'PROJECT_DELAY';
+export interface UpdateTimesheetDetailInput {
+    trpDetailId: string;
+    taskId?: string;
+    hours: number;
+    description?: string;
+    activityType?: string;
+    date?: string;
+}
+export interface AnnouncementItem {
+    id: string;
+    title: string;
+    content?: string;
+    publishUser?: string;
+    publishTime?: string;
+    isRead?: boolean;
+    isPinned?: boolean;
+}
+export type ApprovalCategory = 'CLOCK_REPAIR' | 'OVERTIME' | 'LEAVE' | 'TASK_FINISH' | 'PROJECT_DELAY' | 'GENERAL_WORKITEM';
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export interface ApprovalItem {
     id: string;
